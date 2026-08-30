@@ -11,3 +11,4 @@ reportlab
 python-dotenv
 aiofiles
 psycopg[binary]
+email-validator
