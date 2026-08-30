@@ -1,11 +1,36 @@
 from sqlalchemy.orm import Session
-from app import models, auth
+from app import models, auth, face_engine, crypto
+from app.student_photo import STUDENT_PHOTO_BASE64
+
+DEFAULT_STUDENT_PROFILE_PIC = STUDENT_PHOTO_BASE64
 
 def seed_initial_data(db: Session):
     # Check if admin exists to make idempotent
     admin = db.query(models.User).filter(models.User.email == "admin@presidency.edu").first()
-    if admin:
-        return # Seed already ran
+
+    # Always ensure student Rahul Sharma has the real face profile photo & embedding!
+    student_check = db.query(models.User).filter(models.User.email == "student@presidency.edu").first()
+    if student_check:
+        student_check.profile_pic = DEFAULT_STUDENT_PROFILE_PIC
+        db.commit()
+
+        # Update or create FaceEmbedding with real face features
+        emb_vector = face_engine.extract_face_embedding(DEFAULT_STUDENT_PROFILE_PIC)
+        encrypted_emb = crypto.encrypt_embedding(emb_vector)
+
+        face_check = db.query(models.FaceEmbedding).filter(models.FaceEmbedding.student_id == student_check.id).first()
+        if face_check:
+            face_check.encrypted_embedding = encrypted_emb
+        else:
+            new_face = models.FaceEmbedding(
+                student_id=student_check.id,
+                encrypted_embedding=encrypted_emb
+            )
+            db.add(new_face)
+        db.commit()
+
+        if admin:
+            return
 
     # 1. Admin
     admin_user = models.User(
@@ -56,7 +81,7 @@ def seed_initial_data(db: Session):
             semester=7
         )
         db.add(s)
-        
+
     # 4. Class Periods for Section A
     timetable = [
         # Monday
@@ -87,10 +112,10 @@ def seed_initial_data(db: Session):
         ("Saturday", "MLL604", "09:00", "11:00", "Lab-101"),
         ("Saturday", "LCT609", "11:00", "12:00", "Room-306")
     ]
-    
+
     db.flush()
     subjects = {s.code: s for s in db.query(models.Subject).all()}
-    
+
     for day, code, start, end, room in timetable:
         p = models.ClassPeriod(
             subject_id=subjects[code].id,
@@ -115,12 +140,22 @@ def seed_initial_data(db: Session):
         department="Computer Science & Engineering",
         year=3,
         section="A",
+        profile_pic=DEFAULT_STUDENT_PROFILE_PIC,
         is_approved=True
     )
     db.add(student)
     db.flush()
 
-    # 6. Seed Marks
+    # 6. Generate face embedding for student
+    emb_vector = face_engine.extract_face_embedding(DEFAULT_STUDENT_PROFILE_PIC)
+    encrypted_emb = crypto.encrypt_embedding(emb_vector)
+    face_emb = models.FaceEmbedding(
+        student_id=student.id,
+        encrypted_embedding=encrypted_emb
+    )
+    db.add(face_emb)
+
+    # 7. Seed Marks
     import random
     for code, subj in subjects.items():
         m = models.Mark(

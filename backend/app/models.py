@@ -11,14 +11,14 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     password_hash = Column(String)
     role = Column(String) # student/faculty/admin
-    phone_number = Column(String)
+    phone_number = Column(String, nullable=True)
     roll_number = Column(String, unique=True, nullable=True)
-    department = Column(String)
-    year = Column(Integer)
-    section = Column(String)
+    department = Column(String, nullable=True)
+    year = Column(Integer, nullable=True)
+    section = Column(String, nullable=True)
     google_id = Column(String, nullable=True)
     profile_pic = Column(Text, nullable=True)
-    is_approved = Column(Boolean, default=False)
+    is_approved = Column(Boolean, default=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
@@ -96,6 +96,8 @@ class Attendance(Base):
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     status = Column(String, default='Present')
     verify_score = Column(Float, default=1.0)
+    liveness_score = Column(Float, default=1.0)
+    device_info = Column(String, nullable=True)
 
     __table_args__ = (UniqueConstraint('student_id', 'period_id', 'date', name='_student_period_date_uc'),)
 

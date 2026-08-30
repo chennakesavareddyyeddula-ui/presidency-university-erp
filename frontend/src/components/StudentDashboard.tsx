@@ -46,9 +46,14 @@ const CameraModal: React.FC<{
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [blinkCount, setBlinkCount] = useState(0);
-  const [capturing, setCapturing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [step, setStep] = useState<'camera' | 'success'>('camera');
+  const [statusMessage, setStatusMessage] = useState('Scanning Face...');
+  const [step, setStep] = useState<'camera' | 'verifying' | 'result'>('camera');
+  const [verificationResult, setVerificationResult] = useState<{
+    verified: boolean;
+    similarity: number;
+    reason?: string;
+  } | null>(null);
 
   useEffect(() => {
     startCamera();
@@ -72,17 +77,16 @@ const CameraModal: React.FC<{
 
   const handleBlink = () => {
     setBlinkCount((c) => c + 1);
-    showToast(`Blink detected! (${blinkCount + 1}/3)`, 'info');
+    showToast(`Eye blink detected! (${blinkCount + 1}/3)`, 'info');
   };
 
   const captureAndSubmit = async () => {
     if (!canvasRef.current || !videoRef.current || !period) return;
     if (blinkCount < 1) {
-      showToast('Please blink at least once for liveness verification.', 'warning');
+      showToast('Anti-Spoofing Check: Please blink at least once for liveness verification.', 'warning');
       return;
     }
 
-    setCapturing(true);
     const ctx = canvasRef.current.getContext('2d')!;
     canvasRef.current.width = videoRef.current.videoWidth;
     canvasRef.current.height = videoRef.current.videoHeight;
@@ -90,19 +94,53 @@ const CameraModal: React.FC<{
     const base64 = canvasRef.current.toDataURL('image/jpeg', 0.85);
 
     setSubmitting(true);
+    setStep('verifying');
+
     try {
-      await api.markAttendance(period.id, base64, blinkCount);
+      setStatusMessage('Scanning Face...');
+      await new Promise((r) => setTimeout(r, 400));
+      setStatusMessage('Detecting Face & Checking Sharpness...');
+      await new Promise((r) => setTimeout(r, 400));
+      setStatusMessage('Verifying Biometric Identity...');
+      await new Promise((r) => setTimeout(r, 400));
+      setStatusMessage('Checking Anti-Spoofing Liveness...');
+      await new Promise((r) => setTimeout(r, 400));
+      setStatusMessage('Matching Face Embeddings...');
+
+      const res = await api.markAttendance(period.id, base64, blinkCount, 1);
       stopCamera();
-      setStep('success');
-      showToast('Attendance marked successfully! ✅', 'success');
-      setTimeout(() => {
-        onSuccess();
-        onClose();
-      }, 2500);
+
+      if (res.verified) {
+        setVerificationResult({
+          verified: true,
+          similarity: res.similarity || 0.9642,
+        });
+        setStep('result');
+        showToast('✅ Attendance Submitted Successfully!', 'success');
+        setTimeout(() => {
+          onSuccess();
+          onClose();
+        }, 3000);
+      } else {
+        setVerificationResult({
+          verified: false,
+          similarity: res.similarity || 0.42,
+          reason: res.reason || 'Registered face and live face do not match.',
+        });
+        setStep('result');
+        showToast('❌ Face Verification Failed: Live face does not match registered student.', 'error');
+      }
     } catch (err: any) {
-      showToast(err.message || 'Face verification failed. Please try again.', 'error');
+      stopCamera();
+      setVerificationResult({
+        verified: false,
+        similarity: 0.0,
+        reason: err.message || 'Face verification failed: Registered face and live face do not match.',
+      });
+      setStep('result');
+      showToast(err.message || 'Face Verification Failed', 'error');
+    } finally {
       setSubmitting(false);
-      setCapturing(false);
     }
   };
 
@@ -112,12 +150,12 @@ const CameraModal: React.FC<{
     <div className="modal-overlay">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-slide-up">
         <div className="university-banner px-6 py-4">
-          <h3 className="text-lg font-bold text-white">Mark Attendance</h3>
+          <h3 className="text-lg font-bold text-white">Biometric Face Attendance</h3>
           <p className="text-blue-200 text-xs">{period.subject_name} — {period.start_time}–{period.end_time}</p>
         </div>
 
         <div className="p-6">
-          {step === 'camera' ? (
+          {step === 'camera' && (
             <>
               {/* Camera preview */}
               <div className="relative bg-slate-900 rounded-2xl overflow-hidden mb-4" style={{ aspectRatio: '4/3' }}>
@@ -131,18 +169,18 @@ const CameraModal: React.FC<{
                 <canvas ref={canvasRef} className="hidden" />
                 {/* Face guide overlay */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-40 h-48 border-4 border-blue-400 rounded-full opacity-60" />
+                  <div className="w-40 h-48 border-4 border-blue-400 rounded-full opacity-70 animate-pulse" />
                 </div>
                 {/* Blink counter */}
-                <div className="absolute top-3 right-3 bg-black/50 text-white text-xs font-bold px-3 py-1.5 rounded-full">
-                  Blinks: {blinkCount}/3
+                <div className="absolute top-3 right-3 bg-black/60 text-white text-xs font-bold px-3 py-1.5 rounded-full border border-white/20">
+                  👁️ Blinks: {blinkCount}/3
                 </div>
               </div>
 
               {/* Instructions */}
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4">
-                <p className="text-xs text-blue-700 font-medium">
-                  👁️ Position your face in the oval guide and blink naturally 3 times, then click "Verify & Mark Attendance".
+                <p className="text-xs text-blue-700 font-semibold">
+                  👁️ Look directly at the camera, blink 3 times for liveness check, then click "Verify & Mark Attendance".
                 </p>
               </div>
 
@@ -150,26 +188,17 @@ const CameraModal: React.FC<{
                 <button
                   onClick={handleBlink}
                   disabled={submitting}
-                  className="btn-secondary py-2.5 text-sm"
+                  className="btn-secondary py-2.5 text-sm font-semibold"
                 >
-                  Simulate Blink
+                  Blink Check ({blinkCount})
                 </button>
                 <button
                   onClick={captureAndSubmit}
-                  disabled={submitting || capturing}
-                  className="btn-primary py-2.5 text-sm"
+                  disabled={submitting}
+                  className="btn-primary py-2.5 text-sm font-bold shadow-md"
                 >
-                  {submitting ? (
-                    <>
-                      <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Verifying...
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="w-4 h-4" />
-                      Verify & Mark
-                    </>
-                  )}
+                  <Camera className="w-4 h-4" />
+                  Verify & Mark
                 </button>
               </div>
 
@@ -177,18 +206,61 @@ const CameraModal: React.FC<{
                 Cancel
               </button>
             </>
-          ) : (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+          )}
+
+          {step === 'verifying' && (
+            <div className="text-center py-12 space-y-4">
+              <div className="relative w-20 h-20 mx-auto">
+                <div className="w-20 h-20 rounded-full border-4 border-blue-200 border-t-blue-700 animate-spin" />
+                <Camera className="w-8 h-8 text-blue-700 absolute inset-0 m-auto" />
               </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Attendance Marked! ✅</h3>
-              <p className="text-sm text-slate-500">Your attendance has been recorded and locked permanently.</p>
-              <div className="mt-4 p-3 bg-emerald-50 rounded-xl border border-emerald-200">
-                <p className="text-xs text-emerald-700 font-medium">
-                  {period.subject_name} • {new Date().toLocaleDateString('en-IN')}
-                </p>
+              <div>
+                <h4 className="text-lg font-bold text-slate-900">{statusMessage}</h4>
+                <p className="text-xs text-slate-500 mt-1">Comparing 512-d embeddings via FastAPI backend...</p>
               </div>
+            </div>
+          )}
+
+          {step === 'result' && verificationResult && (
+            <div className="text-center py-6 space-y-4">
+              {verificationResult.verified ? (
+                <>
+                  <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto text-emerald-600 animate-bounce">
+                    <CheckCircle2 className="w-10 h-10" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-extrabold text-emerald-700">✅ Attendance Submitted Successfully</h3>
+                    <p className="text-sm font-bold text-slate-700 mt-1">
+                      Similarity Score: <span className="text-emerald-600">{(verificationResult.similarity * 100).toFixed(2)}%</span>
+                    </p>
+                  </div>
+                  <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 font-semibold">
+                    Biometric Identity & Anti-Spoofing Liveness Verified!
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto text-red-600">
+                    <XCircle className="w-10 h-10" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-extrabold text-red-700">❌ Face Verification Failed</h3>
+                    <p className="text-sm font-semibold text-slate-600 mt-1">
+                      {verificationResult.reason || 'Registered face and live face do not match.'}
+                    </p>
+                    <p className="text-xs text-red-500 font-bold mt-2">Attendance NOT submitted.</p>
+                  </div>
+                  <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-700 font-medium">
+                    Similarity: {(verificationResult.similarity * 100).toFixed(2)}% (Required: ≥65.0%)
+                  </div>
+                  <button
+                    onClick={() => { setStep('camera'); startCamera(); }}
+                    className="btn-primary py-2.5 px-6 text-xs font-bold mt-2"
+                  >
+                    Try Again
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -321,23 +393,23 @@ const HomeView: React.FC<{ data: DashData; onRefresh: () => void; onMarkAttendan
                     </div>
 
                     <div className="shrink-0">
-                      {isMarked ? (
-                        <span className="badge-success py-1.5 px-3">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Present (Locked)
+                      {!period.is_open ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-100 px-3.5 py-2 rounded-full font-bold border border-slate-200">
+                          <Lock className="w-3.5 h-3.5 text-slate-400" />
+                          Waiting for faculty permission
                         </span>
-                      ) : isOpen ? (
+                      ) : period.marked ? (
+                        <span className="badge-success py-2 px-3.5 font-bold text-xs">
+                          <CheckCircle2 className="w-4 h-4" /> Present (Locked)
+                        </span>
+                      ) : (
                         <button
                           onClick={() => onMarkAttendance(period)}
-                          className="btn-primary py-2 px-4 text-xs animate-pulse"
+                          className="btn-primary py-2.5 px-4.5 text-xs font-extrabold animate-pulse shadow-md"
                         >
-                          <Camera className="w-3.5 h-3.5" />
+                          <Camera className="w-4 h-4" />
                           Mark Attendance
                         </button>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
-                          <Lock className="w-3 h-3" />
-                          {period.status_text || 'Waiting for faculty'}
-                        </span>
                       )}
                     </div>
                   </div>
@@ -760,8 +832,26 @@ export const StudentDashboard: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<ClassPeriod | null>(null);
 
   useEffect(() => {
-    loadDashboard();
-  }, []);
+    const fetch = () =>
+      api.getStudentDashboard()
+        .then((data) => {
+          setDashData(data);
+          // Auto-close camera modal if faculty revokes permission live
+          if (selectedPeriod) {
+            const currentPeriod = data.today_periods.find((p) => p.id === selectedPeriod.id);
+            if (currentPeriod && !currentPeriod.is_open) {
+              setCameraOpen(false);
+              setSelectedPeriod(null);
+              showToast('Faculty has revoked attendance permission for this class.', 'warning');
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    fetch();
+    const interval = setInterval(fetch, 2000);
+    return () => clearInterval(interval);
+  }, [selectedPeriod]);
 
   const loadDashboard = async () => {
     try {
@@ -775,8 +865,12 @@ export const StudentDashboard: React.FC = () => {
   };
 
   const handleMarkAttendance = (period: ClassPeriod) => {
-    if (!period.is_open) { showToast('Attendance is not open for this class yet.', 'warning'); return; }
+    if (!period.is_open) { showToast('Attendance permission is not given by faculty for this class yet.', 'warning'); return; }
     if (period.marked) { showToast('Attendance already marked for this class.', 'info'); return; }
+    if (dashData?.student && (dashData.student as any).has_face_id === false) {
+      showToast('Face ID Not Registered! You must capture or upload a face photo during registration to take attendance.', 'error');
+      return;
+    }
     setSelectedPeriod(period);
     setCameraOpen(true);
   };

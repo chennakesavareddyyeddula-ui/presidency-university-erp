@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from app.database import engine, Base, SessionLocal
 from app import models
 from app.routers import auth, student, faculty, admin
@@ -20,6 +21,17 @@ def on_startup():
     models.Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
+        # Dynamic SQLite Column Migration
+        try:
+            db.execute(text("ALTER TABLE attendances ADD COLUMN liveness_score FLOAT DEFAULT 1.0;"))
+            db.commit()
+        except Exception:
+            pass
+        try:
+            db.execute(text("ALTER TABLE attendances ADD COLUMN device_info TEXT;"))
+            db.commit()
+        except Exception:
+            pass
         seed_initial_data(db)
     finally:
         db.close()

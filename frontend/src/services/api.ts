@@ -133,6 +133,16 @@ export interface RosterStudent {
   total_attended: number;
 }
 
+export interface VerificationResponse {
+  verified: boolean;
+  similarity: number;
+  reason?: string;
+  attendance_id?: number;
+  subject_name?: string;
+  date?: string;
+  status?: string;
+}
+
 // ---------------------------------------------------------------
 // API SERVICE CLASS
 // ---------------------------------------------------------------
@@ -172,7 +182,7 @@ class ApiService {
     if (!res.ok) {
       const message =
         typeof data === 'object'
-          ? data?.detail || data?.message || JSON.stringify(data)
+          ? data?.detail || data?.message || data?.reason || JSON.stringify(data)
           : data || `HTTP ${res.status}`;
       throw new Error(message);
     }
@@ -234,18 +244,21 @@ class ApiService {
     return this.request<Mark[]>('/student/marks');
   }
 
-  /** Mark attendance via face verification */
+  /** Mark attendance via biometric face verification pipeline */
   async markAttendance(
     periodId: number,
     capturedImageBase64: string,
-    blinkCount: number
-  ): Promise<any> {
-    return this.request<any>('/student/mark-attendance', {
+    blinkCount: number,
+    headMovementCount: number = 1
+  ): Promise<VerificationResponse> {
+    return this.request<VerificationResponse>('/student/mark-attendance', {
       method: 'POST',
       body: JSON.stringify({
         period_id: periodId,
         captured_image_base64: capturedImageBase64,
         blink_count: blinkCount,
+        head_movement_count: headMovementCount,
+        device_info: navigator.userAgent,
       }),
     });
   }

@@ -11,7 +11,7 @@ __pycache__/
 .env.*
 !.env.example
 
-# Local database
+# Local SQLite database
 backend/attendance.db
 
 # Frontend dependencies

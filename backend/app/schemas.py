@@ -7,7 +7,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     role: str
-    phone_number: str
+    phone_number: Optional[str] = None
     roll_number: Optional[str] = None
     department: Optional[str] = 'Computer Science'
     year: Optional[int] = 3
@@ -47,25 +47,22 @@ class SessionToggleRequest(BaseModel):
 class MarkAttendanceRequest(BaseModel):
     period_id: int
     captured_image_base64: str
-    blink_count: int
+    blink_count: int = 1
+    head_movement_count: Optional[int] = 1
+    device_info: Optional[str] = "Web Client Browser"
 
 class ClassroomAttendanceRequest(BaseModel):
     period_id: int
     classroom_image_base64: str
 
 class AttendanceResponse(BaseModel):
-    id: int
-    student_id: int
-    student_name: str
-    period_id: int
-    subject_name: str
-    date: str
-    timestamp: datetime
-    status: str
-    verify_score: float
-
-    class Config:
-        from_attributes = True
+    verified: bool
+    similarity: float
+    reason: Optional[str] = None
+    attendance_id: Optional[int] = None
+    subject_name: Optional[str] = None
+    date: Optional[str] = None
+    status: Optional[str] = None
 
 class MarkEntryRequest(BaseModel):
     student_id: int
