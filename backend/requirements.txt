@@ -10,3 +10,4 @@ opencv-python-headless
 reportlab
 python-dotenv
 aiofiles
+psycopg[binary]

@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
 from app.database import engine, Base, SessionLocal
 from app import models
 from app.routers import auth, student, faculty, admin
@@ -16,29 +15,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.on_event("startup")
 def on_startup():
+    # Create all database tables
     models.Base.metadata.create_all(bind=engine)
+
+    # Seed initial data
     db = SessionLocal()
     try:
-        # Dynamic SQLite Column Migration
-        try:
-            db.execute(text("ALTER TABLE attendances ADD COLUMN liveness_score FLOAT DEFAULT 1.0;"))
-            db.commit()
-        except Exception:
-            pass
-        try:
-            db.execute(text("ALTER TABLE attendances ADD COLUMN device_info TEXT;"))
-            db.commit()
-        except Exception:
-            pass
         seed_initial_data(db)
     finally:
         db.close()
 
+
 @app.get("/")
 def read_root():
-    return {"status": "running", "app": "Presidency University ERP"}
+    return {
+        "status": "running",
+        "app": "Presidency University ERP"
+    }
+
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(student.router, prefix="/api/student", tags=["student"])

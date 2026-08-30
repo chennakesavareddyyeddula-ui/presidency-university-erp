@@ -5,11 +5,27 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY", "presidency-university-super-secret-jwt-key-2026")
+SECRET_KEY = os.getenv(
+    "SECRET_KEY",
+    "presidency-university-super-secret-jwt-key-2026"
+)
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./attendance.db")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "sqlite:///./attendance.db"
+)
+
+# Use Psycopg 3 when connecting to PostgreSQL (Neon)
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgresql://",
+        "postgresql+psycopg://",
+        1
+    )
+
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", None)
 
 if not ENCRYPTION_KEY:
